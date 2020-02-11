@@ -1,0 +1,153 @@
+= Webster
+:hardbreaks:
+:toc:
+
+== About
+
+Have you ever needed to:
+
+* Cheat to add currency to test a feature?
+* Inspect the GameObject hierarchy on device?
+* Disable and enable GameObjects on device?
+* Visualize a timeline of events occuring in your game?
+* Visualize how long loading operations and web requests take in your game?
+* Visualize frame stalls?
+* See all the assets in memory on device?
+* View, download or delete a file from your persistent data?
+
+Webster allows your to do all of those things! Webster creates a website served from your game that can be accessed from any web browser on your network.
+
+No IDE or Editor is required to use Webster at runtime. This allows artists, designers, QA, or anyone else on your team to use debug and cheat features in a build without having Unity.
+
+All features supported in a player build are also supported in the Editor.
+
+== Setup
+Webster must be enabled using the compiler `#defines`. `WEBSTER_ENABLED` must be defined to use all the features of Webster.
+
+* You can use the `Tools/Tekly/Webster/Enable Webster` menu in Unity to add the defines to your project
+* If the Webster defines are already added to your project the menu will provide items to remove the defines from your project
+
+Once the correct defines are enabled Webster will automatically start up with your game.
+
+TIP: It is recommended you disable these defines for your production builds so that you don't include any debug features in your released product
+
+NOTE: If Webster is enabled it will set `Application.runInBackground` to true so that your game can respond to web requests when its not focused.
+
+=== Additional setup for Frameline
+You must create a `FramelineConfigAsset` in a `Resources` directory to configure the visuals for `Frameline`
+
+* Create a `Resources` directory anywhere in your project
+* Right click on that directory and select the menu item `Create/Tekly/Frameline/Config`
+* Here you can configure the name and color of event types that show up in Frameline
+
+== Usage
+If you've completed the setup steps Webster will automatically start when your game starts.
+
+You can access Webster in a local build at http://localhost:4649
+
+To access Webster from a device build find your device's IP and browse to  http://{your_devices_ip}:4649
+
+=== Home
+Webster's `Home` page provides summary information about the device
+
+=== Assets
+Webster's `Assets` page provides summaries of the assets currently loaded in your game
+
+=== Commands
+Webster's `Commands` page provides an interface for performing commands on your game. Since Webster provides a web server all these commands are performed over HTTP.
+
+The interface is generated based on the parameters for the command so it is fairly generic. If you have a complicated set of commands it is recommended you create a custom page for those commands.
+
+==== Adding Custom Commands
+It is very simple to add custom commands to Webster.
+
+. Create a class to contain the code for handling your commands.
+	* You can have as many classes as you'd like
+. Define functions in your class as normal with the parameters they need
+	* Webster is limited to only accepting simple value types in your functions parameters
+	* Any number, string, enum, boolean is valid. Structs and classes are not supported at this time
+	* Default values are supported and encouraged so the that the UI to display the function in Webster has sensible defaults
+	* Webster will provide URL parameters to your function parameters automatically
+	* Webster will return the value from the function to the request
+	* By default `JsonUtility` is used to serialize the return value of your function so your types are restricted by the types `JsonUtility` can serialize
+. Add `Tekly.Webster.Routing.Route` attributes to your functions
+	* The `Route` attribute takes in a `Route` and `Verb` which indicate what URL to hit to call your function
+		* There are attributes derived from `Route` that set the `Verb` for you. `Get`, `Delete`, `Post`, `Put`
+	* Note that your functions will be called from a background thread. 
+	* You can only access Unity objects from the Main Thread so Webster provides simple utility functions to call code on the Main Thread
+	* You can add a `Route` attribute on your class to add a prefix to all `Routes` in the class
+. Register your handler with `WebsterServer`. You can do this in two ways:
+	.. Call `WebsterServer.AddRouteHandler<T>` templated with the class you created in step 1
+		* Webster will create an instance of your class
+		* The handler will exist for the duration of the game
+	.. Call `WebsterServer.RouteHandlers.Add` with an instance of class you created in step 1
+		* You're responsible for managing this handler now
+		* The handler can be removed any time by calling `WebsterServer.RouteHandlers.Remove`
+
+Below is a simple example that allows you to log a message from Webster
+
+[source,csharp]
+----
+using System;
+using System.Linq;
+using Tekly.Webster;
+using Tekly.Webster.Routing;
+using UnityEngine;
+
+namespace Tekly.Examples
+{
+	[Route("/examples")]
+	public class ExampleHandler
+	{
+		[RuntimeInitializeOnLoadMethod]
+		private static void Initialize()
+		{
+			// The RuntimeInitializeOnLoadMethod attribute tells Unity to call 
+			// this function on startup
+			WebsterServer.AddRouteHandler<ExampleHandler>();
+		}
+
+		[Route("/log", "PUT")]
+		[Description("Logs a message")]
+		public void HandleDebugLog(string logMessage, LogType logType)
+		{
+			// Unity's logger is thread safe
+			Debug.unityLogger.Log(logType, logMessage);
+		}
+	}
+}
+----
+
+=== Disk
+Webster's `Disk` page allows you to browse the contents of `Application.persistentDataPath` directory. You can download and delete files from here as well.
+
+=== Frameline
+Frameline provides a timeline view of FrameEvents in your game. Frameline is intended to be used to visualize at a high level the order and duration of operations in your game.
+
+You must provide Frameline with the FrameEvents.
+
+Providing FrameEvents works in a very similar way to how Unity's built in `Profiler.BeginSample` / `Profiler.EndSample` work.
+
+You add an event by calling `Frameline.BeginEvent("some_event", "Event Group")` paired with a `Frameline.EndEvent("some_event", "Event Group")`. Frameline will then display an event with this name and use the second parameter to index into a collection of FrameEvent configurations. Generally you'd want to define some constants for the event group.
+
+FrameEvents track their `StartFrame`, `EndFrame`, `StartTime`, and `EndTime`. This gives you good insight into how long an event took and if it is causing a significant stall on the main thread.
+
+You can also add instantaneous events by calling `Frameline.InstantEvent("some_event", "Event Group")`.
+
+==== Examples
+Check out the `Demo` scene in `Webster/Examples`. It downloads fake blog posts and displays them.
+
+Also take a look at the following files more examples:
+
+. `Webster/Examples/Utility/GameObjectUtils.cs` - wraps instantiating GameObjects and logs FrameEvents
+. `Webster/Examples/Utility/JsonDeserializer.cs` - wraps serialization and logs FrameEvents
+. `Webster/Examples/Utility/RestWrapper.cs` - wraps making web requests and logs FrameEvents
+
+=== GameObjects
+Webster's `GameObjects` page allows you to browse the GameObject hierarchy.
+
+=== Screen Shot
+Webster's `Screen Shot` page downloads a screenshot of the game.
+
+=== Adding Custom Pages
+There is a zip file in the `Webster` directory named `webster-viewer~`. This contains the source code for the website. Unzip that into the `Webster` directory and follow the `readme` file in there.
